@@ -12,3 +12,8 @@ from .fractions_handling import (
     multiply_fractions,
     divide_fractions
 )
+
+from .abs import absolute
+from .factorial import factorial
+from .percentage import percentage
+from .floor_division import floor_divide

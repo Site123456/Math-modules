@@ -1,12 +1,22 @@
-# This is a Test of existing voice models (latest test with: pyttsx3)
-# CORSPRITE HAS it's own voice input and output model
-# This is a test for math calculation with basic math model
-# Find the complete and better model at: https://github.com/Site123456/CORSPRITE
+# Closing Issue #1 — Add missing basic math modules for CORSPRITE math tools
+# This script is a simple test harness for evaluating CORSPRITE’s math engine
+# using a basic offline voice model (latest test performed with pyttsx3).
 
-# To run this just run:
-# pip install pyttsx3
-# python main.py
+# CORSPRITE itself includes its own dedicated voice input/output system.
+# The purpose of this file is only to validate the math‑calculation module
+# in isolation, using a lightweight TTS backend.
 
+# For the full CORSPRITE model, documentation, and advanced features, visit:
+# https://github.com/Site123456/CORSPRITE
+
+# To run this test:
+#   pip install pyttsx3
+#   python main.py
+
+# Note:
+# math_modules were changed in between.
+# This math module was originally designed for CORSPRITE’s internal architecture.
+# Some features may behave differently when executed through this main.py.
 
 import re
 import threading
@@ -17,8 +27,11 @@ from math_modules import (
     power, square_root, mod,
     make_fraction, add_fractions,
     subtract_fractions, multiply_fractions,
-    divide_fractions
+    divide_fractions,
+    absolute, factorial, percentage, floor_divide
+    
 )
+
 
 # pyttsx3 + QUEUE
 
@@ -125,17 +138,38 @@ op_words = {
     "-": "minus",
     "*": "times",
     "/": "divided by",
+    "//": "floor divided by",
     "%": "modulo",
     "^": "to the power of",
-    "sqrt": "square root of"
+    "sqrt": "square root of",
+    "!": "factorial of",
+    "abs": "absolute value of",
+    "perc": "percent of"
 }
+
+
 
 # TOKENIZER
 def tokenize(expr):
     expr = expr.replace(" ", "")
     expr = expr.replace("√", "sqrt")
-    pattern = r'\d+/\d+|\d+\.?\d*|sqrt|\+|\-|\*|\/|\^|\%|\(|\)'
-    return re.findall(pattern, expr)
+
+    pattern = (
+        r'\d+/\d+'          # fractions
+        r'|\d+\.\d+'        # floats
+        r'|\d+'             # integers
+        r'|sqrt|abs|perc'   # functions
+        r'|//|\+|\-|\*|\/|\^|%|!'  # operators
+        r'|\(|\)'           # parentheses
+    )
+
+    tokens = re.findall(pattern, expr)
+
+    # Reject prefix factorial
+    if tokens and tokens[0] == "!":
+        raise ValueError("Factorial must be postfix, like '10!'")
+
+    return tokens
 
 # EXPRESSION CLEANUP
 OPERATORS = {"+", "-", "*", "/", "%", "^"}
@@ -151,38 +185,65 @@ def parse_value(token):
     if "/" in token:
         num, den = token.split("/")
         return make_fraction(int(num), int(den))
+
     if token == "sqrt":
         return "sqrt"
-    return float(token)
+
+    val = float(token)
+    return int(val) if val.is_integer() else val
+
 
 # PRECEDENCE
 precedence = {
-    "sqrt": 4,
-    "^": 3,
-    "*": 2,
-    "/": 2,
-    "%": 2,
-    "+": 1,
-    "-": 1
+    "sqrt": 6,
+    "!": 6,
+    "u-": 5,
+    "^": 4,
+    "*": 3,
+    "/": 3,
+    "//": 3,
+    "%": 3,
+    "+": 2,
+    "-": 2
 }
 
-# SHUNTING-YARD → RPN
+
 def to_rpn(tokens):
     output = []
     stack = []
 
+    prev = None  # track previous token to detect unary minus
+
     for t in tokens:
+
+        # Numbers or fractions
         if re.match(r'\d', t) or "/" in t:
             output.append(t)
 
-        elif t == "sqrt":
+        # Functions
+        elif t in ("sqrt", "abs", "perc"):
             stack.append(t)
 
+        # Unary minus detection
+        elif t == "-":
+            if prev is None or prev in precedence or prev == "(":
+                # unary minus
+                t = "u-"
+            while stack and stack[-1] in precedence and precedence[stack[-1]] >= precedence[t]:
+                output.append(stack.pop())
+            stack.append(t)
+
+        # Postfix factorial (must NOT go through binary operator logic)
+        elif t == "!":
+            output.append("!")
+
+        # Binary operators
         elif t in precedence:
             while stack and stack[-1] in precedence and precedence[stack[-1]] >= precedence[t]:
                 output.append(stack.pop())
             stack.append(t)
 
+        # Parentheses
         elif t == "(":
             stack.append(t)
 
@@ -193,6 +254,9 @@ def to_rpn(tokens):
                 raise ValueError("Mismatched parentheses.")
             stack.pop()
 
+        prev = t
+
+    # Empty remaining stack
     while stack:
         top = stack.pop()
         if top in ("(", ")"):
@@ -210,20 +274,30 @@ class Node:
 
 def build_tree(rpn):
     stack = []
+    unary_ops = {"sqrt", "!", "abs", "u-"}  # add u-
+
     for t in rpn:
-        if t not in precedence and t != "sqrt":
+        if t not in precedence and t not in unary_ops:
             stack.append(Node(t))
-        else:
-            if t == "sqrt":
-                a = stack.pop()
-                stack.append(Node("sqrt", a, None))
-            else:
-                b = stack.pop()
-                a = stack.pop()
-                stack.append(Node(t, a, b))
+
+        elif t in unary_ops:
+            if not stack:
+                raise ValueError(f"No operand for unary operator {t}")
+            a = stack.pop()
+            stack.append(Node(t, a, None))
+
+        else:  # binary operators
+            if len(stack) < 2:
+                raise ValueError(f"Not enough operands for operator {t}")
+            b = stack.pop()
+            a = stack.pop()
+            stack.append(Node(t, a, b))
+
     if len(stack) != 1:
         raise ValueError("Invalid expression.")
+
     return stack[0]
+
 
 # PRETTY PRINT
 def print_expr(node, parent_prec=0):
@@ -253,16 +327,47 @@ def is_fraction(x):
     return hasattr(x, "numerator")
 
 def eval_node(node, steps, spoken_steps):
-    if node.left is None and node.right is None and node.value != "sqrt":
+    if node.left is None and node.right is None and node.value not in ("sqrt", "!"):
         return parse_value(node.value)
+
+    # Unary operators
+    if node.value == "u-":
+        a = eval_node(node.left, steps, spoken_steps)
+        res = -a
+        steps.append(f"negate({a}) = {res}")
+        spoken_steps.append(f"Negative {value_to_words(a)} equals {value_to_words(res)}.")
+        return res
 
     if node.value == "sqrt":
         a = eval_node(node.left, steps, spoken_steps)
         res = square_root(a)
         steps.append(f"√({a}) = {res}")
-        spoken_steps.append(f"{op_words['sqrt']} {value_to_words(a)} equals {value_to_words(res)}.")
+        spoken_steps.append(f"Square root of {value_to_words(a)} equals {value_to_words(res)}.")
         return res
 
+    if node.value == "!":
+        a = eval_node(node.left, steps, spoken_steps)
+        res = factorial(a)
+        steps.append(f"{a}! = {res}")
+        spoken_steps.append(f"{value_to_words(a)} factorial equals {value_to_words(res)}.")
+        return res
+
+    if node.value == "abs":
+        a = eval_node(node.left, steps, spoken_steps)
+        res = absolute(a)
+        steps.append(f"abs({a}) = {res}")
+        spoken_steps.append(f"Absolute value of {value_to_words(a)} equals {value_to_words(res)}.")
+        return res
+
+    if node.value == "perc":
+        a = eval_node(node.left, steps, spoken_steps)
+        b = eval_node(node.right, steps, spoken_steps)
+        res = percentage(a, b)
+        steps.append(f"{b}% of {a} = {res}")
+        spoken_steps.append(f"{value_to_words(b)} percent of {value_to_words(a)} equals {value_to_words(res)}.")
+        return res
+
+    # Binary operators
     a = eval_node(node.left, steps, spoken_steps)
     b = eval_node(node.right, steps, spoken_steps)
 
@@ -277,14 +382,13 @@ def eval_node(node, steps, spoken_steps):
         elif node.value == "-": res = subtract(a, b)
         elif node.value == "*": res = multiply(a, b)
         elif node.value == "/": res = divide(a, b)
+        elif node.value == "//": res = floor_divide(a, b)
         elif node.value == "^": res = power(a, b)
         elif node.value == "%": res = mod(a, b)
         else: raise ValueError("Unknown operator.")
 
     steps.append(f"{a} {node.value} {b} = {res}")
-    spoken_steps.append(
-        f"{value_to_words(a)} {op_words[node.value]} {value_to_words(b)} equals {value_to_words(res)}."
-    )
+    spoken_steps.append(f"{value_to_words(a)} {op_words.get(node.value, node.value)} {value_to_words(b)} equals {value_to_words(res)}.")
     return res
 
 # The CORSPRITE architecture has been updated.
@@ -329,6 +433,55 @@ def split_expressions(raw: str):
     normalized = raw.replace("\n", ";").replace(",", ";")
     parts = [p.strip() for p in normalized.split(";")]
     return [p for p in parts if p]
+
+# UPDATED CALCULATION FUNCTIONS
+def calculate_expression(expr: str, speak_steps=False):
+    expr = clean_expression(expr)
+
+    if not expr:
+        speak("Impossible to calculate.")
+        return None, [], [], ""
+
+    try:
+        tokens = tokenize(expr)
+        rpn = to_rpn(tokens)
+        tree = build_tree(rpn)
+
+        pretty = print_expr(tree)
+
+        steps = []
+        spoken_steps = []
+        result = eval_node(tree, steps, spoken_steps)
+
+        # Prepare readable spoken expression
+        spoken_expr = pretty.replace("sqrt", "square root of") \
+                            .replace("*", " times ") \
+                            .replace("/", " divided by ") \
+                            .replace("%", " modulo ") \
+                            .replace("//", " floor divided by ") \
+                            .replace("abs", "absolute value of") \
+                            .replace("!", " factorial of") \
+                            .replace("perc", " percent of")
+
+        speak(f"{spoken_expr}. The final result is {value_to_words(result)}.")
+
+        if speak_steps and spoken_steps:
+            speak("Here are the steps. " + " ".join(spoken_steps))
+
+        return result, steps, spoken_steps, pretty
+
+    except Exception as e:
+        print(f"Error: {e}")
+        speak("Impossible to calculate.")
+        return None, [], [], ""
+
+
+def split_expressions(raw: str):
+    # Accept ; , and newlines as separators
+    normalized = raw.replace("\n", ";").replace(",", ";")
+    parts = [p.strip() for p in normalized.split(";")]
+    return [p for p in parts if p]
+
 
 def calculate_multiple(raw: str, speak_steps=True):
     expressions = split_expressions(raw)
