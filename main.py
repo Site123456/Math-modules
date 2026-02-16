@@ -7,6 +7,7 @@
 # pip install pyttsx3
 # python main.py
 
+
 import re
 import threading
 import queue
@@ -286,7 +287,8 @@ def eval_node(node, steps, spoken_steps):
     )
     return res
 
-# SINGLE EXPRESSION API
+# The CORSPRITE architecture has been updated.
+# Instead of streaming intermediate steps, only the final computation result is sent to the C++ application, and all voice is now handled entirely on the GPU, not the CPU.
 def calculate_expression(expr: str, speak_steps=False):
     expr = clean_expression(expr)
 
@@ -309,8 +311,7 @@ def calculate_expression(expr: str, speak_steps=False):
                             .replace("*", " times ") \
                             .replace("/", " divided by ") \
                             .replace("%", " modulo ")
-
-        speak(f"Calculating {spoken_expr}. The final result is {value_to_words(result)}.")
+        speak(f"{spoken_expr}. The final result is {value_to_words(result)}.")
 
         if speak_steps:
             speak("Here are the steps. " + " ".join(spoken_steps))
