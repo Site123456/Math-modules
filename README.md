@@ -5,11 +5,7 @@ This project is a **test environment** for experimenting with offline voice outp
 It is **not** the full CORSPRITE system — only a lightweight test of:
 
 - Offline text‑to‑speech  
-- Basic math parsing  
-- Step‑by‑step evaluation  
-- Clean expression handling  
-- A simplified version of CORSPRITE’s math logic  
-
+- Basic math parsing
 ---
 
 ## 🔊 About CORSPRITE
@@ -20,7 +16,7 @@ You can find the complete and improved CORSPRITE project here:
 
 👉 **[https://github.com/Site123456/CORSPRITE](https://github.com/Site123456/CORSPRITE)**
 
-This repository is only a **test module** for experimenting with voice output and math logic.
+This repository is only a **test module** for experimenting with input & output logic.
 
 ---
 
@@ -40,5 +36,6 @@ Expression 1: 3+3*3
   Step 2: 3.0 + 9.0 = 12.0
 Final result: 12.0
 
+Maj+ENTER to confirm expression
 ## Test it:
 View in main.py the latest changes
