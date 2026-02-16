@@ -19,7 +19,8 @@ from math_modules import (
     divide_fractions
 )
 
-# OFFLINE TTS (pyttsx3) + QUEUE (NO OVERLAP)
+# pyttsx3 + QUEUE
+
 engine = pyttsx3.init()
 _speech_queue = queue.Queue()
 _speech_thread = None
@@ -199,10 +200,7 @@ def to_rpn(tokens):
 
     return output
 
-# ============================================
 # EXPRESSION TREE
-# ============================================
-
 class Node:
     def __init__(self, value, left=None, right=None):
         self.value = value
@@ -226,10 +224,7 @@ def build_tree(rpn):
         raise ValueError("Invalid expression.")
     return stack[0]
 
-# ============================================
 # PRETTY PRINT
-# ============================================
-
 def print_expr(node, parent_prec=0):
     if node.value == "sqrt":
         return f"√({print_expr(node.left, precedence['sqrt'])})"
@@ -244,10 +239,7 @@ def print_expr(node, parent_prec=0):
     expr = f"{left} {node.value} {right}"
     return f"({expr})" if my_prec < parent_prec else expr
 
-# ============================================
 # VALUE → WORDS
-# ============================================
-
 def value_to_words(v):
     if hasattr(v, "numerator"):
         return fraction_to_words(v)
@@ -255,10 +247,7 @@ def value_to_words(v):
         return float_to_words(v)
     return number_to_words(v)
 
-# ============================================
 # EVALUATION (WITH STEP ORDER)
-# ============================================
-
 def is_fraction(x):
     return hasattr(x, "numerator")
 
@@ -297,10 +286,7 @@ def eval_node(node, steps, spoken_steps):
     )
     return res
 
-# ============================================
-# PUBLIC API — CALLABLE
-# ============================================
-
+# SINGLE EXPRESSION API
 def calculate_expression(expr: str, speak_steps=False):
     expr = clean_expression(expr)
 
@@ -335,16 +321,56 @@ def calculate_expression(expr: str, speak_steps=False):
         speak("Impossible to calculate.")
         return None, [], [], ""
 
-# ============================================
-# OPTIONAL CLI
-# ============================================
+# MULTI-EXPRESSION SUPPORT
+def split_expressions(raw: str):
+    # Accept ; , and newlines as separators, mixed
+    # Replace newlines with semicolons, then commas with semicolons, then split
+    normalized = raw.replace("\n", ";").replace(",", ";")
+    parts = [p.strip() for p in normalized.split(";")]
+    return [p for p in parts if p]
 
+def calculate_multiple(raw: str, speak_steps=True):
+    expressions = split_expressions(raw)
+    results = []
+
+    for idx, expr in enumerate(expressions, start=1):
+        print(f"\nExpression {idx}: {expr}")
+        result, steps, spoken_steps, pretty = calculate_expression(expr, speak_steps=speak_steps)
+
+        if result is None:
+            print("  Error: Impossible to calculate.")
+            results.append((expr, None, steps, pretty))
+            continue
+
+        # Print steps in clean block format
+        for i, step in enumerate(steps, start=1):
+            print(f"  Step {i}: {step}")
+        print(f"Final result: {result}")
+
+        results.append((expr, result, steps, pretty))
+
+    return results
+
+# OPTIONAL CLI
 if __name__ == "__main__":
     try:
         while True:
-            expr = input("Enter expression (or 'exit'): ")
-            if expr.lower() in ["exit", "quit", "stop"]:
+            print("\nEnter one or more expressions.")
+            print("You can separate them with ';', ',' or newlines.")
+            raw = []
+            line = input("Expression (or 'exit'): ")
+            if line.lower().strip() in ["exit", "quit", "stop"]:
                 break
-            calculate_expression(expr, speak_steps=True)
+
+            # Allow multi-line input until blank line
+            raw.append(line)
+            while True:
+                more = input()
+                if more.strip() == "":
+                    break
+                raw.append(more)
+
+            full_input = "\n".join(raw)
+            calculate_multiple(full_input, speak_steps=True)
     finally:
         shutdown_speech()
